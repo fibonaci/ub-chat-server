@@ -1,0 +1,15 @@
+'use strict';
+
+let codes = {
+
+  'CLOSE_NORMAL': 1000,
+  'CLOSE_GOING_AWAY': 1001,
+  'CLOSE_PROTOCOL_ERROR': 1002,
+  'CLOSE_UNSUPPORTED': 1003,
+  'CLOSED_NO_STATUS': 1005,
+  'CLOSE_ABNORMAL': 1006,
+  'UNSUPORTED_DATA': 1007,
+  'CLOSE_TOO_LARGE': 1009
+};
+
+module.exports = codes;

@@ -2,20 +2,24 @@
 'use strict';
 
 const WebSocket = require('ws'),
+      codes = require('./codes.js'),
       Log = require('./logger/index.js'),
-      commands = require('./commands.js'),
-      wss = new WebSocket.Server({ port: 8080 });
+      commands = require('./commands.js');
 
-let conID = Symbol('conID'),
-    connections = new Set([]),
-    nickname = Symbol('nickname'),
-    lastActivity = Symbol('lastActivity');
+const options = {
 
-function noop() {}
+      port: 8080,
+      clientTracking: true
+    };
 
-function heartbeat() {
-  this.isAlive = true; // jshint ignore:line
+if (!+process.env.INACTIVITY_TIMEOUT) {
+  return console.log('error starting serve. Environment variable INACTIVITY_TIMEOUT in ms not set')
 }
+
+const wss = new WebSocket.Server(options);
+
+let nickname = Symbol('nickname'),
+    timeoutId = Symbol('timeoutId');
 
 wss.on('connection', (ws, req) => {
 
@@ -25,9 +29,23 @@ wss.on('connection', (ws, req) => {
 
   log.trace({ ip: ip }, 'received new connection from IP');
 
-  ws.isAlive = true;
+  ws.on('close', code => {
 
-  ws.on('pong', heartbeat);
+    let user;
+
+    wss.clients.forEach(item => {
+
+      if (item === ws) {
+
+        user = item[nickname];
+        clearTimeout(item[timeoutId]);
+      }
+    });
+
+    log.trace({ code: code }, 'closed connection');
+    ws.close();
+    return wss.broadcast({"code": "0", "msg": `${user} left the chat, connection lost`});
+  });
 
   ws.on('message', message => {
 
@@ -36,84 +54,78 @@ wss.on('connection', (ws, req) => {
         conExist,
         itdentity;
 
-    // TODO validate message "{\"a\":\"LOGIN\",\"d\":{\"n\":\"Jhon\"}}" ==> expectet format
-
     try {
-      msg = JSON.parse(JSON.parse(message));
+      msg = JSON.parse(message);
     }
     catch (e) {
 
       log.error(e, 'error parsing incomming request');
-      ws.send('ERROR');
+      return ws.close(codes.UNSUPORTED_DATA);
     }
 
     if (!commands[msg.c]) {
 
       log.trace({ msg: msg }, 'message command not found');
-      ws.send(JSON.stringify({"code": "400", "msg": `command not exist`}));
+      return ws.close(codes.CLOSE_PROTOCOL_ERROR);
     }
 
     if (msg.c === commands.LOGIN) {
-      // "{\"c\":\"LOGIN\",\"d\":{\"n\":\"Jhon\"}}"
+      // {"c":"LOGIN","d":{"n":"Jhon"}}
       logins = [];
+
       log.trace({ msg: msg }, 'received new login request');
 
       // prepare ws object
 
-      connections.forEach(item => {
+      wss.clients.forEach(item => {
 
-        logins.push(item[nickname]);
+        if (item[nickname]) {
+          logins.push(item[nickname]);
+        }
 
         if (item[nickname] === msg.d.n) {
           itdentity = true;
-        }
-        if (item[conID] === req.headers['sec-websocket-key']) {
-
-          log.trace(`connection exist for nickname ${item[nickname]}`);
-          itdentity = true;
-          conExist = item[nickname];
         }
       });
 
       if (!itdentity) {
 
         ws[nickname] = msg.d.n;
-        ws[lastActivity] = new Date();
-        ws[conID] = req.headers['sec-websocket-key'];
-
-        connections.add(ws);
 
         logins.push(msg.d.n);
 
         log.debug(`new nickname ${msg.d.n} joined`);
+
+        ws[timeoutId] = setTimeout(disconnectClient, +process.env.INACTIVITY_TIMEOUT, { ws: ws, log: log }).ref();
+
         wss.broadcast(logins);
       }
       else {
 
-        if (conExist) {
-          wss.broadcast(logins);
-        }
-        else {
-
           log.trace(`nickname ${msg.d.n} already exist`);
           ws.send(JSON.stringify({"code": "1", "msg": `nickname ${msg.d.n} already exist`}));
-        }
       }
     }
     if (msg.c === commands.SENDMESSAGE) {
 
-      // "{\"c\":\"SENDMESSAGE\",\"d\":{\"n\":\"Hi, my name is Jhon\"}}"
+      // {"c":"SENDMESSAGE","d":{"n":"Hi, my name is Jhon"}}
       let user;
 
-      Array.from(connections).forEach(item => {
+      wss.clients.forEach(item => {
 
-        if (item.readyState === WebSocket.OPEN && item[conID] === req.headers['sec-websocket-key']) {
+        if (item === ws) {
 
           user = item[nickname];
 
-          connections.delete(item);
-          item[lastActivity] = new Date();
-          connections.add(item);
+          if (!item[timeoutId]) {
+            ws[timeoutId] = setTimeout(disconnectClient, +process.env.INACTIVITY_TIMEOUT, { ws: ws, log: log }).ref();
+          }
+          else {
+
+            clearTimeout(item[timeoutId]);
+            item[timeoutId] = setTimeout(disconnectClient, +process.env.INACTIVITY_TIMEOUT, { ws: ws, log: log }).ref();
+          }
+          return;
         }
       });
 
@@ -125,9 +137,9 @@ wss.on('connection', (ws, req) => {
       }
 
       log.trace('socket session valid');
+
       wss.broadcast({"code": "0", "msg": {nickname: user, m: msg.d.n}});
     }
-
   });
 
   ws.send('CONNECTED'); // TODO return different event
@@ -137,9 +149,9 @@ wss.broadcast = (data) => {
 
   let log = new Log('ChatServer').inFile('packages/main/index.js').inFunction('broadcast');
 
-  connections.forEach(item => {
+  wss.clients.forEach(item => {
 
-    if (item.readyState === WebSocket.OPEN && item.isAlive) {
+    if (item.readyState === WebSocket.OPEN) {
 
       log.trace({ msg: data }, 'broadcast data to all clients');
 
@@ -148,27 +160,32 @@ wss.broadcast = (data) => {
   });
 };
 
-setInterval(function ping() {
 
-  connections.forEach(item => {
+function disconnectClient(obj) {
 
-    let time = new Date(new Date() - 2 * 60 * 1000);
+  let user;
 
-    if (item.isAlive === false) {
+  let log = obj.log.inFunction('disconnectClient');
 
-      wss.broadcast({"code": "0", "msg": `${item[nickname]} left the chat, connection lost`});
-      connections.delete(item);
-      item.terminate();
+  wss.clients.forEach(item => {
+
+    if (item === obj.ws) {
+      user = item[nickname];
     }
-
-    if (item[lastActivity] < time) {
-
-      wss.broadcast({"code": "0", "msg": `${item[nickname]} was disconnected due to inactivity`});
-      connections.delete(item);
-      item.terminate();
-    }
-
-    item.isAlive = false;
-    item.ping(noop);
   });
-}, 10000);
+
+  log.trace({ user: user }, 'diconnect user due to inactivity');
+
+  obj.ws.close();
+  wss.broadcast({"code": "0", "msg": `${user} was disconnected due to inactivity`});
+}
+
+console.log('server started');
+
+process.on('SIGINT', () => process.kill(process.pid));
+
+process.on('SIGTERM', () => {
+
+  console.log('stopping server');
+  wss.close(process.exit);
+});
