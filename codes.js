@@ -9,7 +9,8 @@ let codes = {
   'CLOSED_NO_STATUS': 1005,
   'CLOSE_ABNORMAL': 1006,
   'UNSUPORTED_DATA': 1007,
-  'CLOSE_TOO_LARGE': 1009
+  'CLOSE_TOO_LARGE': 1009,
+  'CLOSE_INACTIVE': 4000
 };
 
 module.exports = codes;

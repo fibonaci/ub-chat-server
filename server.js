@@ -1,5 +1,5 @@
 
-'use strict';
+"use strict";
 
 const WebSocket = require('ws'),
       codes = require('./codes.js'),
@@ -13,7 +13,7 @@ const options = {
     };
 
 if (!+process.env.INACTIVITY_TIMEOUT) {
-  return console.log('error starting serve. Environment variable INACTIVITY_TIMEOUT in ms not set')
+  return console.log('error starting serve. Environment variable INACTIVITY_TIMEOUT in ms not set');
 }
 
 const wss = new WebSocket.Server(options);
@@ -176,7 +176,7 @@ function disconnectClient(obj) {
 
   log.trace({ user: user }, 'diconnect user due to inactivity');
 
-  obj.ws.close();
+  obj.ws.close(codes.CLOSE_INACTIVE);
   wss.broadcast({"code": "0", "msg": `${user} was disconnected due to inactivity`});
 }
 
