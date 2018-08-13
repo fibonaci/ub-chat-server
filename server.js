@@ -33,6 +33,8 @@ wss.on('connection', (ws, req) => {
 
   ws[timeoutId] = setTimeout(disconnectClient, +process.env.INACTIVITY_TIMEOUT, { ws: ws, log: log }).ref();
 
+  ws.send(JSON.stringify({ event: 'CONNECTED' }));
+
   ws.on('close', code => {
 
     log.trace({ code: code }, 'closed connection');
@@ -170,10 +172,7 @@ wss.on('connection', (ws, req) => {
       ws.terminate();
       return wss.broadcast({ 'event': 'MESSAGE', 'msg': { nickname: '' , content: `${user} left chat, connection lost` }});
     }
-
   });
-
-  ws.send(JSON.stringify({ event: 'CONNECTED' }));
 });
 
 wss.broadcast = (data) => {
