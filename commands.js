@@ -4,7 +4,8 @@
 let commands = {
 
   LOGIN: 'LOGIN',
-  SENDMESSAGE: 'SENDMESSAGE'
+  SENDMESSAGE: 'SENDMESSAGE',
+  DISCONNECT: 'DISCONNECT'
 };
 
 module.exports = commands;
