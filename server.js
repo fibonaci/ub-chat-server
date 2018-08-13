@@ -18,7 +18,7 @@ if (!+process.env.INACTIVITY_TIMEOUT) {
 }
 
 // initiate the WebSocket connection
-const wss = new WebSocket.Server(options); //
+const wss = new WebSocket.Server(options);
 
 let nickname = Symbol('nickname'),
     timeoutId = Symbol('timeoutId');
@@ -34,8 +34,6 @@ wss.on('connection', (ws, req) => {
   ws[timeoutId] = setTimeout(disconnectClient, +process.env.INACTIVITY_TIMEOUT, { ws: ws, log: log }).ref();
 
   ws.on('close', code => {
-
-    let user;
 
     log.trace({ code: code }, 'closed connection');
 
